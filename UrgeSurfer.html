@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Urge Surfing</title>
+    <!-- Mobile Viewport Meta Tags -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <style>
+        /* === MENU STYLES === */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #76c3e6;
+            overflow: hidden;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* === GAME STYLES === */
+        canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F7FA 100%);
+            display: none; /* Hidden until game starts */
+        }
+
+        /* Menu Screen */
+        #mainMenu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F7FA 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+
+        #mainMenu h1 {
+            color: #333;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+            font-size: 2.5rem;
+        }
+
+        .touch-instruction {
+            margin-top: 20px;
+            font-size: 1.2rem;
+            color: #333;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
+        }
+
+        /* End Screen */
+        #endScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F7FA 100%);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+        }
+
+        .score-display {
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            text-align: center;
+        }
+
+        .current-score {
+            font-size: 1.5rem;
+            color: #1E90FF;
+            margin-bottom: 10px;
+        }
+
+        .high-score {
+            font-size: 1.5rem;
+            color: #FF6B6B;
+        }
+    </style>
+</head>
+<body>
+    <!-- Main Menu -->
+    <div id="mainMenu">
+        <h1>URGE SURFING</h1>
+        <div class="touch-instruction">Tap anywhere to start</div>
+    </div>
+
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- End Screen -->
+    <div id="endScreen">
+        <h1>GAME OVER</h1>
+        <div class="score-display">
+            <div class="current-score">Your Score: <span id="finalScore">0</span></div>
+            <div class="high-score">High Score: <span id="finalHighScore">0</span></div>
+        </div>
+        <div class="touch-instruction">Tap to play again</div>
+    </div>
+
+    <script>
+        // Initialize canvas
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        
+        // Responsive canvas setup
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            
+            // Adjust game elements proportionally
+            surfboardWidth = canvas.width * 0.15;
+            surfboardHeight = canvas.height * 0.07;
+            obstacleGap = canvas.height * 0.4;
+            OBSTACLE_WIDTH = canvas.width * 0.1;
+            OBSTACLE_HEIGHT = canvas.height * 0.1;
+            
+            // Reset surfboard position
+            surfboard.x = canvas.width * 0.2;
+            surfboard.y = canvas.height / 2;
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Menu elements
+        const mainMenu = document.getElementById("mainMenu");
+        const endScreen = document.getElementById("endScreen");
+        const finalScoreDisplay = document.getElementById("finalScore");
+        const finalHighScoreDisplay = document.getElementById("finalHighScore");
+
+        // Load images
+        const surfboardImg = new Image();
+        surfboardImg.src = 'Surfer.png';
+        let surfboardWidth, surfboardHeight;
+
+        const exclamationYellow = new Image();
+        exclamationYellow.src = 'yellow_exclamation_mark.png';
+        const exclamationRed = new Image();
+        exclamationRed.src = 'red_exclamation_mark.png';
+
+        // Game objects
+        let surfboard = {
+            x: 0,
+            y: 0,
+            velocity: 0,
+            gravity: 0.3,
+            jumpStrength: -10
+        };
+
+        // Wave settings
+        const waves = [
+            { x: 0, y: 0, width: 0, speed: 0.7, height: 4 },
+            { x: 0, y: 0, width: 0, speed: 0.6, height: 5 }
+        ];
+        let waveOffset = 0;
+
+        // Obstacle settings 
+        let obstacles = [];
+        let score = 0;
+        let gameOver = false;
+        let obstacleGap, obstacleFrequency = 150;
+        let obstacleSpeed = 1.5;
+        let frameCount = 0;
+        let OBSTACLE_WIDTH, OBSTACLE_HEIGHT;
+
+        // Jump mechanics
+        let isJumping = false;
+        let coyoteTime = 0;
+        const coyoteTimeThreshold = 12;
+        let jumpBuffer = 0;
+        const jumpBufferTime = 6;
+
+        // High score
+        let highScore = localStorage.getItem('urgeSurfingHighScore') || 0;
+
+        // Game state management
+        let gameState = "menu"; // "menu", "playing", or "gameOver"
+
+        // Menu functions
+        function startGame() {
+            gameState = "playing";
+            mainMenu.style.display = "none";
+            endScreen.style.display = "none";
+            canvas.style.display = "block";
+            resetGame();
+        }
+
+        function showGameOver() {
+            gameState = "gameOver";
+            finalScoreDisplay.textContent = score;
+            finalHighScoreDisplay.textContent = highScore;
+            endScreen.style.display = "flex";
+            canvas.style.display = "none";
+        }
+
+        // Touch controls
+        function handleTap() {
+            if (gameState === "menu") {
+                startGame();
+            } 
+            else if (gameState === "playing") {
+                jumpBuffer = jumpBufferTime;
+            }
+            else if (gameState === "gameOver") {
+                startGame();
+            }
+        }
+
+        function handleTapEnd() {
+            if (isJumping) {
+                if (surfboard.velocity < surfboard.jumpStrength * 0.5) {
+                    surfboard.velocity *= 0.6;
+                }
+                isJumping = false;
+            }
+        }
+
+        // Set up touch controls
+        document.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            handleTap();
+        });
+        
+        document.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            handleTapEnd();
+        });
+        
+        // Prevent default touch behaviors
+        document.addEventListener('touchmove', (e) => {
+            if (gameState === "playing") e.preventDefault();
+        }, { passive: false });
+
+        // Reset game state
+        function resetGame() {
+            surfboard.y = canvas.height / 2;
+            surfboard.velocity = 0;
+            obstacles = [];
+            score = 0;
+            gameOver = false;
+            frameCount = 0;
+            isJumping = false;
+            coyoteTime = 0;
+            jumpBuffer = 0;
+            
+            // Reset wave positions
+            waves[0].x = canvas.width * 0.2;
+            waves[0].y = canvas.height * 0.5;
+            waves[0].width = canvas.width * 0.2;
+            
+            waves[1].x = canvas.width * 0.7;
+            waves[1].y = canvas.height * 0.52;
+            waves[1].width = canvas.width * 0.17;
+            
+            waveOffset = 0;
+        }
+
+        // Update high score
+        function updateHighScore() {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('urgeSurfingHighScore', highScore);
+            }
+        }
+
+        // Draw surfboard using image
+        function drawSurfboard() {
+            if (surfboardImg.complete && surfboardImg.naturalWidth > 0) {
+                ctx.save();
+                ctx.translate(surfboard.x, surfboard.y);
+                let rotation = Math.atan2(surfboard.velocity, 15);
+                ctx.rotate(rotation);
+                ctx.drawImage(
+                    surfboardImg,
+                    -surfboardWidth/2,
+                    -surfboardHeight/2,
+                    surfboardWidth,
+                    surfboardHeight
+                );
+                ctx.restore();
+            } else {
+                // Fallback rectangle while image loads
+                ctx.fillStyle = '#1E90FF';
+                ctx.fillRect(surfboard.x - surfboardWidth/2, surfboard.y - surfboardHeight/2, surfboardWidth, surfboardHeight);
+            }
+        }
+
+        // Draw waves function
+        function drawWaves() {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+            
+            waves.forEach(wave => {
+                ctx.beginPath();
+                
+                const segments = 12;
+                const segmentWidth = wave.width / segments;
+                
+                for (let i = 0; i <= segments; i++) {
+                    const x = wave.x + i * segmentWidth;
+                    const y = wave.y + Math.sin(waveOffset + i * 0.5) * wave.height;
+                    
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+                
+                ctx.lineTo(wave.x + wave.width, wave.y + 15);
+                ctx.lineTo(wave.x, wave.y + 15);
+                ctx.closePath();
+                ctx.fill();
+            });
+        }
+
+        // Create new obstacle
+        function createObstacle() {
+            const topHeight = Math.random() * (canvas.height - obstacleGap - 150) + 75;
+            const useRed = Math.random() > 0.5;
+            
+            obstacles.push({
+                x: canvas.width,
+                width: OBSTACLE_WIDTH,
+                height: OBSTACLE_HEIGHT,
+                topHeight: topHeight,
+                bottomHeight: canvas.height - topHeight - obstacleGap,
+                passed: false,
+                isRed: useRed
+            });
+        }
+
+        // Draw obstacles
+        function drawObstacles() {
+            obstacles.forEach(obstacle => {
+                const img = obstacle.isRed ? exclamationRed : exclamationYellow;
+                const fallbackColor = obstacle.isRed ? '#FF0000' : '#FFFF00';
+                
+                if (img.complete) {
+                    // Top obstacle
+                    ctx.drawImage(
+                        img,
+                        obstacle.x - obstacle.width/2,
+                        obstacle.topHeight - obstacle.height,
+                        obstacle.width,
+                        obstacle.height
+                    );
+                    // Bottom obstacle (flipped vertically)
+                    ctx.save();
+                    ctx.translate(obstacle.x, canvas.height - obstacle.bottomHeight + obstacle.height);
+                    ctx.scale(1, -1);
+                    ctx.drawImage(
+                        img,
+                        -obstacle.width/2,
+                        0,
+                        obstacle.width,
+                        obstacle.height
+                    );
+                    ctx.restore();
+                } else {
+                    ctx.fillStyle = fallbackColor;
+                    ctx.fillRect(obstacle.x - obstacle.width/2, obstacle.topHeight - obstacle.height, obstacle.width, obstacle.height);
+                    ctx.fillRect(obstacle.x - obstacle.width/2, canvas.height - obstacle.bottomHeight, obstacle.width, obstacle.height);
+                }
+            });
+        }
+
+        // Check for collisions
+        function checkCollision() {
+            const boardLeft = surfboard.x - surfboardWidth/2;
+            const boardRight = surfboard.x + surfboardWidth/2;
+            const boardTop = surfboard.y - surfboardHeight/2;
+            const boardBottom = surfboard.y + surfboardHeight/2;
+
+            if (boardBottom > canvas.height || boardTop < 0) {
+                gameOver = true;
+                updateHighScore();
+                showGameOver();
+            }
+
+            for (let obstacle of obstacles) {
+                if (
+                    boardRight > obstacle.x - obstacle.width/2 &&
+                    boardLeft < obstacle.x + obstacle.width/2 &&
+                    (boardTop < obstacle.topHeight || 
+                     boardBottom > canvas.height - obstacle.bottomHeight)
+                ) {
+                    gameOver = true;
+                    updateHighScore();
+                    showGameOver();
+                }
+
+                if (!obstacle.passed && surfboard.x > obstacle.x + obstacle.width/2) {
+                    obstacle.passed = true;
+                    score++;
+                }
+            }
+        }
+
+        // Update game state
+        function update() {
+            if (gameState !== "playing") return;
+
+            waveOffset += 0.08;
+            
+            waves.forEach(wave => {
+                wave.x -= wave.speed;
+                if (wave.x + wave.width < 0) {
+                    wave.x = canvas.width;
+                }
+            });
+
+            if (surfboard.y + surfboardHeight/2 < canvas.height) {
+                coyoteTime = coyoteTimeThreshold;
+            } else {
+                coyoteTime--;
+            }
+
+            if (jumpBuffer > 0) {
+                jumpBuffer--;
+                if (coyoteTime > 0) {
+                    surfboard.velocity = surfboard.jumpStrength;
+                    jumpBuffer = 0;
+                    coyoteTime = 0;
+                    isJumping = true;
+                }
+            }
+
+            surfboard.velocity += surfboard.gravity;
+            surfboard.y += surfboard.velocity;
+
+            frameCount++;
+            if (frameCount % obstacleFrequency === 0) {
+                createObstacle();
+            }
+
+            obstacles.forEach(obstacle => {
+                obstacle.x -= obstacleSpeed;
+            });
+
+            obstacles = obstacles.filter(obstacle => obstacle.x + obstacle.width > 0);
+            checkCollision();
+        }
+
+        // Render game frame
+        function draw() {
+            ctx.fillStyle = "#87CEEB";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawWaves();
+            drawObstacles();
+            drawSurfboard();
+
+            ctx.fillStyle = "#000";
+            ctx.font = `${canvas.width * 0.06}px Arial`;
+            ctx.fillText(`Score: ${score}`, canvas.width * 0.05, canvas.height * 0.1);
+        }
+
+        // Main game loop
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Initialize game
+        resizeCanvas();
+        gameLoop();
+    </script>
+</body>
+</html>
